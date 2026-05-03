@@ -1,0 +1,38 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables
+.env
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Heavy Machine Learning Artifacts
+# We only want the .pkl models used in production
+data/
+models/experiments/
+models/*.keras
+models/*.h5
+models/*.png
+models/*.txt
+
+# Universal blocks for large data files
+*.csv
+*.json
+*.zip
+*.tar.gz
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Logs
+*.log
+
+# OS & IDEs
+.DS_Store
+.vscode/
+.idea/
