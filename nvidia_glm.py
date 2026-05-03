@@ -8,7 +8,7 @@ _RESET_COLOR = "\033[0m" if _USE_COLOR else ""
 
 client = OpenAI(
   base_url = "https://integrate.api.nvidia.com/v1",
-  api_key = "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"
+  api_key = "nvXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 )
 
 
