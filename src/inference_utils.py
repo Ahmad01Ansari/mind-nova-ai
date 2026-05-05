@@ -2,7 +2,6 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
-import shap
 
 class ModelManager:
     def __init__(self, models_dir="models"):
@@ -395,6 +394,7 @@ class ModelManager:
                     # For calibrated models, explain the underlying estimator
                     explainer_model = inner_model if is_calibrated else model
                     if explainer_model is not None:
+                        import shap
                         explainer = shap.TreeExplainer(explainer_model)
                         shap_values = explainer.shap_values(X_df)
                         

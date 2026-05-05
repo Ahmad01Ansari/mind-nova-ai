@@ -19,9 +19,28 @@ app = FastAPI(title="Nova AI Prediction API")
 
 BRIDGE_SECRET = os.getenv("FASTAPI_BRIDGE_SECRET", "mock_secret")
 
-model_hub = ModelManager()
-insight_hub = InsightGenerator()
-crisis_hub = CrisisAnalyzer()
+# Lazy loading of hubs to speed up startup and prevent Render timeouts
+_model_hub = None
+_insight_hub = None
+_crisis_hub = None
+
+def get_model_hub():
+    global _model_hub
+    if _model_hub is None:
+        _model_hub = ModelManager()
+    return _model_hub
+
+def get_insight_hub():
+    global _insight_hub
+    if _insight_hub is None:
+        _insight_hub = InsightGenerator()
+    return _insight_hub
+
+def get_crisis_hub():
+    global _crisis_hub
+    if _crisis_hub is None:
+        _crisis_hub = CrisisAnalyzer()
+    return _crisis_hub
 
 async def verify_bridge_token(x_bridge_secret: str = Header(...)):
     if x_bridge_secret != BRIDGE_SECRET:
@@ -174,6 +193,9 @@ async def _try_nvidia_fallback(messages: list, is_json: bool):
 # ══════════════════════════════════════════════════════════════════════
 
 async def process_prediction(request_dict: dict, prediction_type: str, user_id: str):
+    model_hub = get_model_hub()
+    insight_hub = get_insight_hub()
+    
     if prediction_type == "anxiety":
         res = model_hub.predict_anxiety(request_dict)
     elif prediction_type == "depression":
@@ -221,7 +243,7 @@ async def process_prediction(request_dict: dict, prediction_type: str, user_id: 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "mind_nova_ai", "models_loaded": list(model_hub.registry.keys())}
+    return {"status": "healthy", "service": "mind_nova_ai"}
 
 @app.post("/predict/anxiety", dependencies=[Depends(verify_bridge_token)])
 async def analyze_anxiety(request: AnxietyDepressionRequest):
@@ -241,6 +263,8 @@ async def analyze_stress(request: StressRequest):
 
 @app.post("/predict/deterioration", dependencies=[Depends(verify_bridge_token)])
 async def analyze_deterioration(request: DeteriorationRequest):
+    model_hub = get_model_hub()
+    insight_hub = get_insight_hub()
     history_list = [h.model_dump() for h in request.history]
     res = model_hub.predict_deterioration(history_list)
     insight_payload = {"predictionType": "deterioration", "modelData": res, "context": {"history": history_list}}
@@ -262,6 +286,7 @@ async def generate_chat(request: ChatRequest):
 
 @app.post("/analyze/crisis", dependencies=[Depends(verify_bridge_token)])
 async def analyze_crisis(request: CrisisRequest):
+    crisis_hub = get_crisis_hub()
     return await crisis_hub.analyze(request.text)
 
 @app.post("/analyze/tone", dependencies=[Depends(verify_bridge_token)])
