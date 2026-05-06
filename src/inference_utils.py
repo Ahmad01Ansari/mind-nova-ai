@@ -10,10 +10,6 @@ class ModelManager:
         self.scalers = {}
         self.imputers = {}
         self.features = {}
-        self._load_all_artifacts()
-
-    def _load_all_artifacts(self):
-        print("🏗️  Initializing Model Hub...")
         self.registry = {
             "stress": {"file": "stress_model_recovered", "threshold": 0.62, "version": "v3"},
             "deterioration": {"file": "deterioration_model_recovered", "threshold": 0.35, "version": "v2"},
@@ -22,42 +18,53 @@ class ModelManager:
             "burnout": {"file": "burnout_xgboost", "threshold": 0.71, "version": "lgbm_best"}
         }
 
-        for key, config in self.registry.items():
-            prefix = config["file"]
-            try:
-                m_path = os.path.join(self.models_dir, f"{prefix}.pkl")
-                if not os.path.exists(m_path): continue
-                self.models[key] = joblib.load(m_path)
-                
-                s_suffix = "_recovered" if "recovered" in prefix else ("_final" if "final" in prefix else "")
-                s_path = os.path.join(self.models_dir, f"{key}_scaler{s_suffix}.pkl")
-                if "binary_optimized" in prefix: s_path = os.path.join(self.models_dir, "hybrid_scaler.pkl")
-                if not os.path.exists(s_path): s_path = os.path.join(self.models_dir, f"{key}_scaler.pkl")
-                if not os.path.exists(s_path): s_path = os.path.join(self.models_dir, "scaler.pkl")
-                if os.path.exists(s_path): self.scalers[key] = joblib.load(s_path)
-                
-                i_path = os.path.join(self.models_dir, f"{key}_imputer{s_suffix}.pkl")
-                if not os.path.exists(i_path): i_path = os.path.join(self.models_dir, f"{key}_imputer.pkl")
-                if os.path.exists(i_path): self.imputers[key] = joblib.load(i_path)
-                
-                # Load correct feature manifest based on model
-                if key == "stress": f_path = os.path.join(self.models_dir, "stress_features_recovered.pkl")
-                elif key == "deterioration": f_path = os.path.join(self.models_dir, "deterioration_features_recovered.pkl")
-                elif key == "burnout" and os.path.exists(os.path.join(self.models_dir, "burnout_clinical_features.pkl")):
-                    f_path = os.path.join(self.models_dir, "burnout_clinical_features.pkl")
-                else: f_path = os.path.join(self.models_dir, "selected_features.pkl")
-                
-                if os.path.exists(f_path):
-                    self.features[key] = joblib.load(f_path)
-                
-                # Dynamic override: If scaler has feature names, use them as absolute truth
-                if key in self.scalers and hasattr(self.scalers[key], "feature_names_in_"):
-                    self.features[key] = list(self.scalers[key].feature_names_in_)
-                
-                print(f"✅ Loaded {key.upper()} Model Cluster. Features: {len(self.features.get(key, []))}")
-            except Exception as e:
-                print(f"⚠️  Error loading {key}: {str(e)}")
+    def _ensure_model_loaded(self, key):
+        if key in self.models:
+            return True
+        
+        if key not in self.registry:
+            return False
 
+        config = self.registry[key]
+        prefix = config["file"]
+        print(f"🏗️  Loading {key.upper()} Model Cluster on demand...")
+        
+        try:
+            m_path = os.path.join(self.models_dir, f"{prefix}.pkl")
+            if not os.path.exists(m_path): 
+                print(f"❌ Model file not found: {m_path}")
+                return False
+                
+            self.models[key] = joblib.load(m_path)
+            
+            s_suffix = "_recovered" if "recovered" in prefix else ("_final" if "final" in prefix else "")
+            s_path = os.path.join(self.models_dir, f"{key}_scaler{s_suffix}.pkl")
+            if "binary_optimized" in prefix: s_path = os.path.join(self.models_dir, "hybrid_scaler.pkl")
+            if not os.path.exists(s_path): s_path = os.path.join(self.models_dir, f"{key}_scaler.pkl")
+            if not os.path.exists(s_path): s_path = os.path.join(self.models_dir, "scaler.pkl")
+            if os.path.exists(s_path): self.scalers[key] = joblib.load(s_path)
+            
+            i_path = os.path.join(self.models_dir, f"{key}_imputer{s_suffix}.pkl")
+            if not os.path.exists(i_path): i_path = os.path.join(self.models_dir, f"{key}_imputer.pkl")
+            if os.path.exists(i_path): self.imputers[key] = joblib.load(i_path)
+            
+            if key == "stress": f_path = os.path.join(self.models_dir, "stress_features_recovered.pkl")
+            elif key == "deterioration": f_path = os.path.join(self.models_dir, "deterioration_features_recovered.pkl")
+            elif key == "burnout" and os.path.exists(os.path.join(self.models_dir, "burnout_clinical_features.pkl")):
+                f_path = os.path.join(self.models_dir, "burnout_clinical_features.pkl")
+            else: f_path = os.path.join(self.models_dir, "selected_features.pkl")
+            
+            if os.path.exists(f_path):
+                self.features[key] = joblib.load(f_path)
+            
+            if key in self.scalers and hasattr(self.scalers[key], "feature_names_in_"):
+                self.features[key] = list(self.scalers[key].feature_names_in_)
+            
+            print(f"✅ Loaded {key.upper()} Model Cluster.")
+            return True
+        except Exception as e:
+            print(f"⚠️  Error loading {key}: {str(e)}")
+            return False
     def _map_granular(self, val, scale_min=1.0, scale_max=10.0, target_min=1.0, target_max=10.0):
         """
         Maps a 1-10 slider value to a model-specific range using linear interpolation.
@@ -71,7 +78,7 @@ class ModelManager:
         return np.clip(scaled, target_min, target_max)
 
     def predict_anxiety(self, data: dict):
-        if "anxiety" not in self.models: return {"error": "Model not loaded"}
+        if not self._ensure_model_loaded("anxiety"): return {"error": "Model not loaded"}
         feats = self.features["anxiety"]
         v = {f: 5.0 for f in feats} 
         
@@ -122,7 +129,7 @@ class ModelManager:
         return self._format_result(prob, "anxiety", v, self.models["anxiety"], X_df)
 
     def predict_depression(self, data: dict):
-        if "depression" not in self.models: return {"error": "Model not loaded"}
+        if not self._ensure_model_loaded("depression"): return {"error": "Model not loaded"}
         feats = self.features["depression"]
         v = {f: 5.0 for f in feats}
         
@@ -172,7 +179,7 @@ class ModelManager:
         return self._format_result(prob, "depression", v, self.models["depression"], X_df)
 
     def predict_burnout(self, data: dict):
-        if "burnout" not in self.models: return {"error": "Model not loaded"}
+        if not self._ensure_model_loaded("burnout"): return {"error": "Model not loaded"}
         feats = self.features["burnout"]
         v = {f: 0.0 for f in feats}
         
@@ -244,7 +251,7 @@ class ModelManager:
         return self._format_result(prob, "burnout", v, self.models["burnout"], X_df)
 
     def predict_stress(self, data: dict):
-        if "stress" not in self.models: return {"error": "Model not loaded"}
+        if not self._ensure_model_loaded("stress"): return {"error": "Model not loaded"}
         feats = self.features["stress"]
         v = {f: 0 for f in feats}
         
@@ -285,6 +292,7 @@ class ModelManager:
         return self._format_result(prob, "stress", v, self.models["stress"], X_df)
 
     def predict_deterioration(self, history: list):
+        if not self._ensure_model_loaded("deterioration"): return {"error": "Model not loaded"}
         if len(history) < 7:
             return {"status": "insufficient_data", "message": "Min 7 days required."}
             
