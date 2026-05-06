@@ -113,3 +113,39 @@ Generate the JSON response matching the schema.
             "encouragement": "We are here to support your journey. Take it one step at a time.",
             "safetyNote": "Consider professional support if these feelings persist." if risk in ["HIGH", "SEVERE"] else None
         }
+
+    async def generate_journal_insight(self, content: str, mood_state: str = None) -> Dict[str, Any]:
+        """
+        Analyzes a journal entry for emotional tone, triggers, and reflection.
+        """
+        system_prompt = """You are Nova, an empathetic AI Journal Guide. 
+Analyze the user's journal entry and provide emotional insights.
+STRICT RULES:
+- Output MUST be valid JSON.
+- Be compassionate but objective.
+- Identify potential emotional triggers (people, places, topics).
+- Give an emotional score (1-10) where 1 is deep distress and 10 is peak joy.
+
+OUTPUT SCHEMA:
+{
+  "tone": "One word (e.g. Reflective, Anxious, Joyful, Somber)",
+  "emotionalScore": float,
+  "summary": "A 1-sentence summary of the entry's emotional core.",
+  "suggestedAction": "One small wellness action based on the content.",
+  "detectedTriggers": ["trigger1", "trigger2"]
+}
+"""
+        user_prompt = f"JOURNAL ENTRY: {content}\nMOOD AT TIME: {mood_state}\nGenerate insights JSON."
+
+        try:
+            res_text = await generate_with_cloud(user_prompt, system_prompt, is_json=True)
+            return json.loads(res_text)
+        except Exception as e:
+            print(f"Journal Insight Generation Failed: {str(e)}")
+            return {
+                "tone": "Reflective",
+                "emotionalScore": 5.0,
+                "summary": "You've shared your thoughts with Nova.",
+                "suggestedAction": "Take a deep breath and acknowledge your feelings.",
+                "detectedTriggers": []
+            }

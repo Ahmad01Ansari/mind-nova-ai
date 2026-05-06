@@ -66,6 +66,11 @@ class ToneRequest(BaseModel):
     text: str
     context: Optional[str] = "GROUP_CHAT"
 
+class JournalAnalysisRequest(BaseModel):
+    userId: str
+    content: str
+    moodState: Optional[str] = None
+
 class AnxietyDepressionRequest(InferenceBaseRequest):
     sleep_hours: float = 7.0
     gad2_score: float = 2.0
@@ -298,6 +303,11 @@ async def analyze_tone(request: ToneRequest):
         return json.loads(res_text)
     except:
         return {"safe": True, "label": "SAFE", "action": "ALLOW", "reason": "Fallback"}
+
+@app.post("/analyze/journal", dependencies=[Depends(verify_bridge_token)])
+async def analyze_journal(request: JournalAnalysisRequest):
+    insight_hub = get_insight_hub()
+    return await insight_hub.generate_journal_insight(request.content, request.moodState)
 
 # ══════════════════════════════════════════════════════════════════════
 #  WEEKLY REPORT AI SUMMARY
