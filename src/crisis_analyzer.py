@@ -51,7 +51,7 @@ OUTPUT SCHEMA:
                     "category": "SUICIDE",
                     "analysis": "Keyword detection triggered during AI outage.",
                     "suggestions": [
-                        "Please call the 988 Lifeline immediately.",
+                        "Please call the 102 Lifeline immediately.",
                         "Reach out to your primary support contact."
                     ]
                 }
