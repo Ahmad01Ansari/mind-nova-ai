@@ -3,7 +3,8 @@ import json
 import re
 import httpx
 import datetime
-from fastapi import FastAPI, HTTPException, Header, Depends
+import tempfile
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
@@ -41,6 +42,20 @@ def get_crisis_hub():
     if _crisis_hub is None:
         _crisis_hub = CrisisAnalyzer()
     return _crisis_hub
+
+_whisper_model = None
+
+def get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        try:
+            from faster_whisper import WhisperModel
+            # Load base model for better multilingual accuracy (tiny struggles with Hindi)
+            _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        except ImportError:
+            print("faster-whisper not installed!")
+            _whisper_model = None
+    return _whisper_model
 
 async def verify_bridge_token(x_bridge_secret: str = Header(...)):
     if x_bridge_secret != BRIDGE_SECRET:
@@ -308,6 +323,47 @@ async def analyze_tone(request: ToneRequest):
 async def analyze_journal(request: JournalAnalysisRequest):
     insight_hub = get_insight_hub()
     return await insight_hub.generate_journal_insight(request.content, request.moodState)
+
+# ══════════════════════════════════════════════════════════════════════
+#  VOICE INTELLIGENCE (STT)
+# ══════════════════════════════════════════════════════════════════════
+
+@app.post("/voice/transcribe")
+async def transcribe_voice(file: UploadFile = File(...)):
+    model = get_whisper_model()
+    if not model:
+        raise HTTPException(status_code=500, detail="Faster-Whisper model not initialized")
+
+    # Save uploaded file to temp file
+    filename = file.filename or ""
+    if "webm" in filename:
+        suffix = ".webm"
+    elif "m4a" in filename:
+        suffix = ".m4a"
+    else:
+        suffix = ".wav"
+        
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        segments, info = model.transcribe(tmp_path, beam_size=5)
+        transcript = "".join([segment.text for segment in segments])
+        
+        return {
+            "transcript": transcript.strip(),
+            "originalLanguage": info.language,
+            "durationSeconds": info.duration,
+            "provider": "Faster-Whisper (Local)",
+            "confidence": info.language_probability
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 # ══════════════════════════════════════════════════════════════════════
 #  WEEKLY REPORT AI SUMMARY
