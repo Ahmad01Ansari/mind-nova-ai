@@ -3,9 +3,9 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install ffmpeg which is REQUIRED for Faster-Whisper to process audio
-# Also install pkg-config and libav in case PyAV needs to compile from source
+# Also install build-essential, pkg-config and libav in case PyAV needs to compile from source
 RUN apt-get update && \
-    apt-get install -y ffmpeg pkg-config libavformat-dev libavcodec-dev libavdevice-dev \
+    apt-get install -y ffmpeg build-essential pkg-config libavformat-dev libavcodec-dev libavdevice-dev \
     libavutil-dev libswscale-dev libswresample-dev libavfilter-dev && \
     rm -rf /var/lib/apt/lists/*
 
