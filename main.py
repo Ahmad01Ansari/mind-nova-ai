@@ -43,6 +43,8 @@ def get_crisis_hub():
         _crisis_hub = CrisisAnalyzer()
     return _crisis_hub
 
+import time
+
 _whisper_model = None
 
 def get_whisper_model():
@@ -50,8 +52,11 @@ def get_whisper_model():
     if _whisper_model is None:
         try:
             from faster_whisper import WhisperModel
-            # Load base model for better multilingual accuracy (tiny struggles with Hindi)
-            _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+            model_size = os.getenv("WHISPER_MODEL", "base")
+            device = os.getenv("WHISPER_DEVICE", "cpu")
+            compute_type = os.getenv("WHISPER_COMPUTE", "int8")
+            print(f"Loading Whisper model: {model_size} on {device} ({compute_type})")
+            _whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
         except ImportError:
             print("faster-whisper not installed!")
             _whisper_model = None
@@ -330,6 +335,7 @@ async def analyze_journal(request: JournalAnalysisRequest):
 
 @app.post("/voice/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)):
+    start_time = time.time()
     model = get_whisper_model()
     if not model:
         raise HTTPException(status_code=500, detail="Faster-Whisper model not initialized")
@@ -349,15 +355,36 @@ async def transcribe_voice(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        segments, info = model.transcribe(tmp_path, beam_size=5)
-        transcript = "".join([segment.text for segment in segments])
+        # Use built-in Silero VAD filtering to skip silence and speed up transcription
+        segments, info = model.transcribe(
+            tmp_path, 
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+        
+        # Build segments list and full transcript
+        transcript_segments = []
+        full_transcript = []
+        for segment in segments:
+            full_transcript.append(segment.text)
+            transcript_segments.append({
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip(),
+            })
+            
+        transcript = "".join(full_transcript)
+        processing_time = int((time.time() - start_time) * 1000)
         
         return {
             "transcript": transcript.strip(),
             "originalLanguage": info.language,
             "durationSeconds": info.duration,
             "provider": "Faster-Whisper (Local)",
-            "confidence": info.language_probability
+            "confidence": info.language_probability,
+            "processingTimeMs": processing_time,
+            "segments": transcript_segments
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -365,8 +392,18 @@ async def transcribe_voice(file: UploadFile = File(...)):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-# ══════════════════════════════════════════════════════════════════════
-#  WEEKLY REPORT AI SUMMARY
+@app.get("/voice/warmup")
+async def warmup_voice():
+    """Endpoint hit by cron jobs to keep the AI active and Whisper model loaded in memory."""
+    start_time = time.time()
+    model = get_whisper_model()
+    if not model:
+        raise HTTPException(status_code=500, detail="Faster-Whisper model could not initialize")
+    return {
+        "status": "ready",
+        "model": os.getenv("WHISPER_MODEL", "base"),
+        "loadTimeMs": int((time.time() - start_time) * 1000)
+    }
 # ══════════════════════════════════════════════════════════════════════
 
 class WeeklySummaryRequest(BaseModel):
